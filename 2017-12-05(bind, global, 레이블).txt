@@ -1,0 +1,302 @@
+/* 
+PL/SQL = PL(Procedure Language) SQL(Structured Query Language)
+ - IBM 출신 DB2 작업하던 개발자들이 나와서 오라클 만듬
+ - SQL + a(노트 참조)
+ - 에이다 -> 파스칼 계보의 언어
+*/
+
+/* v$sql.txt */
+
+/* 1.DBA SESSION */
+alter system flush shared_pool; --> 2번 실시, shared_pool 메모리 초기화
+
+
+/* 2.HR SESSION */
+select * from hr.employees where employee_id = 100;
+select * from hr.employees where employee_id = 101;
+select * from hr.employees where employee_id = 102;
+select * from hr.employees where employee_id = 103;
+
+
+/* 3.DBA SESSION */
+select sql_id, sql_text, parse_calls, executions --> parse_calls : 조회횟수, executions : 실행횟수
+from v$sql -->  shared_pool에 있는 sql문 lib.cache 값 본다
+where sql_text like '%hr.employee%'
+and sql_text not like '%v$sql%';
+
+
+
+/* 실행계획 확인 : 중복되는 SQL문, 메모리 및 CPU 사용량 나빠짐 --> PL/SQL로 변수 처리해야 함*/
+select * from table(dbms_xplan.display_cursor('82mnzcywm53rs'));
+select * from table(dbms_xplan.display_cursor('czmhpuznkxr1r'));
+select * from table(dbms_xplan.display_cursor('2sgjc8u8ha0m4'));
+select * from table(dbms_xplan.display_cursor('crmr8navwm6mf'));
+
+
+
+/* SQLPLUS */
+
+> conn hr/hr
+> var b_id number      # PGA - session data 영역에서 변수(숫자타입)생성 
+> exec :b_id := 100    # ':' 문법임(주의)
+> print :b_id
+> select * from hr.employees where employee_id = :b_id;
+
+  # DBA SESSION : shared_pool에 있는 sql문 lib.cache 값 확인
+
+> exec :b_id := 101
+> select * from hr.employees where employee_id = :b_id;  
+
+  # DBA SESSION : shared_pool에 있는 sql문 lib.cache 값 확인
+
+> var b_name varchar2(20)
+> exec :b_name := 'king'
+> select * 
+  from hr.employees
+  where last_name = initcap(:b_name);
+> exec :b_name := 'grant'
+> select * 
+  from hr.employees
+  where last_name = initcap(:b_name);
+
+> select * from V$SQL_BIND_CAPTURE  # 변수처리된 SQL문만 캡쳐한거 보여줌
+  where sql_id = 'gdh3251n9spny';
+
+
+=========================================================================
+
+PL/SQL 프로그램은 블록 구조 형식
+
+익명블록 구조(객체 프로그램이 아니다) FORMS(웹기반 오라클 툴)
+
+DECLARE(선택) : 선언부분(변수, 명시적 커서, 사용자 정의 예외사항)
+
+BEGIN(필수) : 실행부분(SQL문 처리, 로직구현)
+
+EXCEPTION(선택) : 예외사항(실행부분 발생한 오류에 대한 처리방법)
+
+END;(필수)
+/             <-- 필수
+-----------------------------------------------------------------------
+ex)
+
+> BEGIN
+      DBMS_OUTPUT.PUT_LINE('오늘 행복하자'); --> PUT_LINE : 행단위로 한행씩 출력
+  END;
+  /
+
+> set serveroutput on <-- 출력내용 보려면 미리 설정
+> /
+
+-----------------------------------------------------------------------
+
+declare
+  /* scalar data type(단일값만 보유하는 변수) */
+       v_a number(7);  --> null이 초기값으로
+       v_b number(3) := 100;
+       v_c varchar2(10) not null := 'oracle';  --> not null 선언시 초기값 설정 필수
+       v_d constant date default sysdate;
+       v_e constant number(7) := 7;  --> 상수선언시 초기값 설정 필수, 다른값 입력제한
+       -- v_f, v_z number; -- error (변수는 1개씩 선언해야 함)
+
+begin 
+      v_a := 200;
+      dbms_output.put_line(v_a);
+      dbms_output.put_line(v_b);
+      dbms_output.put_line(v_c);
+      dbms_output.put_line(v_d);
+      dbms_output.put_line(v_e);
+      v_d := sysdate; --> error
+      v_b := 101;
+      dbms_output.put_line(v_b);
+
+end;
+/
+
+----------------------------------------------------------------------
+
+/* 바인드변수를 글로벌 변수처럼 사용하기 */
+
+var g_total number --> 글로벌 변수 : 바인드변수를 프로그램 내/외부 사용가능
+
+declare
+       v_sal number := 10000; --> 로컬변수 : 프로그램 내부에서만 사용가능
+       v_comm number := 100; 
+begin
+      :g_total := v_sal + v_comm; --> ':'의미는 프로그램 외부에서 변수를 불러옴
+end;
+/
+
+print :g_total
+
+select * from employees where salary > :g_total;
+
+----------------------------------------------------------------------
+
+[문제1] 화면의 결과 처럼 프로그램을 작성하세요.
+
+TODAY'S : 17/12/05
+TOMORROW'S : 17/12/06
+
+declare
+       v_char varchar2(20) := 'TODAY''S :';
+       v_date date := sysdate;
+begin
+       dbms_output.put_line(v_char||v_date);
+       v_char := 'TOMORROW''S :';
+       v_date := sysdate + 1;
+       dbms_output.put_line(v_char||v_date);
+end;
+/
+
+
+begin 
+ dbms_output.put_line('TODAY''s : '||sysdate);
+ dbms_output.put_line('TOMORROW''s : '||(sysdate+1));
+ dbms_output.put_line(q'['TODAY's : ]'||sysdate);
+ dbms_output.put_line(q'['TOMORROW's : ]'||(sysdate+1));
+end;
+/
+======================================================================
+
+declare
+   v_name varchar2(20);
+begin
+   dbms_output.put_line('My name is : ' || v_name); --> 문자 + null = 문자
+   v_name := 'james';
+   dbms_output.put_line('My name is : ' || v_name);
+   v_name := 'harden';
+   dbms_output.put_line('My name is : ' || v_name);
+end;
+/
+
+
+# 바인드 변수, 호스트 변수, 글로벌 변수, 전역변수
+
+var g_sal number
+execute :g_sal := 10000
+
+var g_comm number
+exec :g_comm := 1000
+
+var g_total number
+
+print :g_sal :g_comm :g_total
+
+
+declare
+       v_sal number := :g_sal;
+       v_comm number := :g_comm;
+begin
+      :g_total := v_sal + v_comm;
+end;
+/
+
+print :g_total
+select * from employees where salary > :g_total;
+
+
+
+# 변수이름
+ - 문자로 시작해야 함
+ - 문자, 숫자, 특수문자( _ $ # ) 포함가능
+ - 30자 이하의 문자만 포함
+ - 예약어는 사용불가(select, update, ...)
+
+# 변수 선언시에 not null, constant 로 지정된 변수는 무조건 초기값 할당해야 함
+  (할당연산자는 := 또는 default 키워드 사용)
+
+
+=====================================================================
+
+# 절차위주 언어
+
+declare
+       v_sal number(8,2) := 60000;  --> 전체 8자리 중 소수점 2자리 표현
+       v_comm number(8,2) := v_sal * 0.20;
+       v_message varchar2(100) := 'eligible for commission';
+begin
+       dbms_output.put_line(v_sal);
+       dbms_output.put_line(v_comm);
+       dbms_output.put_line('Salesman ' || v_message);
+end;
+/
+
+
+=====================================================================
+
+# subblock 구조
+ - 변수의 우선순위는 자기 block이 더 높다
+ - main block에서 선언한 변수를 사용가능(참조가능)
+ - 단, main block은 sub block에서 선언된 변수를 사용할 수 없다(여기선 v_total)
+
+<<outer>> /* 레이블 선언 : 메인과 서브과 동일한 변수명을 사용시 구분할 수 있는 방법 */
+declare
+       v_sal number(8,2) := 60000;  --> 전체 8자리 중 소수점 2자리 표현
+       v_comm number(8,2) := v_sal * 0.20;
+       v_message varchar2(100) := 'eligible for commission';
+begin
+       declare
+         v_sal number(8,2) := 50000;
+         v_comm number(8,2) := 0;
+         v_total number(8,2) := v_sal + v_comm;
+       begin
+         v_message := 'Clerk not '|| v_message;  --> mainblock v_message에 저장
+          outer.v_comm := v_sal * 0.30;          --> mainblock v_comm에 저장(구별하기 위해 outer.)
+         dbms_output.put_line('<<sub block>>');  
+         dbms_output.put_line(v_sal);            --> 50000 
+         dbms_output.put_line(v_comm);           --> 0
+         dbms_output.put_line(v_total);          --> 50000
+         dbms_output.put_line(v_message);        --> Clerk not eligible for commission
+       end; --> subblock에서 선언한 변수 사라짐
+       dbms_output.put_line(v_sal);
+       dbms_output.put_line(v_comm);
+       dbms_output.put_line('Salesman ' || v_message);
+       -- dbms_output.put_line(v_total);         --> error
+end;
+/
+
+/* 여기서 v_message를 주목할 필요가 있다. 메인블럭변수이지만 서브에서 사용되면서
+   초기값과 다르게 나옴 */
+
+
+=====================================================================
+
+/* plustrce */
+
+SQL> CONN sys/oracle as sysdba
+Connected.
+SQL> @C:\oraclexe\app\oracle\product\11.2.0\server\sqlplus\admin\plustrce.sql
+SQL>
+SQL> drop role plustrace;
+
+Role dropped.
+
+SQL> create role plustrace;
+
+Role created.
+
+SQL>
+SQL> grant select on v_$sesstat to plustrace;
+
+Grant succeeded.
+
+SQL> grant select on v_$statname to plustrace;
+
+Grant succeeded.
+
+SQL> grant select on v_$mystat to plustrace;
+
+Grant succeeded.
+
+SQL> grant plustrace to dba with admin option;
+
+Grant succeeded.
+
+SQL>
+SQL> set echo off
+SQL> grant plustrace to hr;
+
+Grant succeeded.
+
+SQL>
